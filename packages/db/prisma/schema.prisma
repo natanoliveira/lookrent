@@ -1,0 +1,375 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  GERENTE
+  ATENDENTE
+}
+
+enum PlanoEmpresa {
+  BASICO
+  PROFISSIONAL
+  ENTERPRISE
+}
+
+enum StatusAssinatura {
+  ATIVA
+  TRIAL
+  INADIMPLENTE
+  CANCELADA
+  PAUSADA
+}
+
+enum StatusContrato {
+  ATIVO
+  FINALIZADO
+  CANCELADO
+  PENDENTE
+}
+
+enum TipoMovimentacao {
+  RETIRADA
+  DEVOLUCAO
+}
+
+enum StatusPagamento {
+  PENDENTE
+  PAGO
+  CANCELADO
+}
+
+enum StatusContaReceber {
+  ABERTA
+  PAGA
+  VENCIDA
+  CANCELADA
+}
+
+enum StatusTicket {
+  ABERTO
+  RESOLVIDO
+  CANCELADO
+}
+
+// ─── Empresa (multi-tenant root) ────────────────────────────────────────────
+
+model Empresa {
+  id        String       @id @default(cuid())
+  nome      String
+  cnpj      String       @unique
+  email     String
+  telefone  String
+  logradouro String
+  numero    String
+  complemento String?
+  bairro    String
+  cidade    String
+  estado    String
+  cep       String
+  logo      String?
+  plano     PlanoEmpresa @default(BASICO)
+  statusAssinatura StatusAssinatura @default(ATIVA)
+  trialAte   DateTime?
+  assinaturaAte DateTime?
+  limiteUsuarios Int @default(5)
+  limiteContratos Int @default(100)
+  ativo     Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  // Relationships
+  usuarios         Usuario[]
+  clientes         Cliente[]
+  produtos         Produto[]
+  contratos        Contrato[]
+  formasPagamento  FormaPagamento[]
+  pagamentos       Pagamento[]
+  contasReceber    ContaReceber[]
+  tickets          Ticket[]
+  configuracao     ConfiguracaoEmpresa?
+
+  @@map("empresas")
+}
+
+// ─── Usuario ────────────────────────────────────────────────────────────────
+
+model Usuario {
+  id        String   @id @default(cuid())
+  empresaId String
+  nome      String
+  email     String
+  senhaHash String
+  role      Role     @default(ATENDENTE)
+  ativo     Boolean  @default(true)
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  passwordResetTokens PasswordResetToken[]
+  auditLogs AuditLog[] @relation("AuditActor")
+
+  @@unique([email, empresaId])
+  @@index([empresaId])
+  @@map("usuarios")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  usuarioId String
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@index([tokenHash])
+  @@map("password_reset_tokens")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String
+  action      String
+  targetType  String
+  targetId    String?
+  meta        Json?
+  createdAt   DateTime @default(now())
+
+  actor Usuario @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: Cascade)
+
+  @@index([actorUserId])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+// ─── Cliente ────────────────────────────────────────────────────────────────
+
+model Cliente {
+  id           String   @id @default(cuid())
+  empresaId    String
+  cpf          String
+  nomeCompleto String
+  logradouro   String
+  numero       String
+  complemento  String?
+  bairro       String
+  cidade       String
+  estado       String
+  cep          String
+  telefone     String
+  email        String?
+  ativo        Boolean  @default(true)
+  removido     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  empresa   Empresa    @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  contratos Contrato[]
+  tickets   Ticket[]
+
+  @@unique([cpf, empresaId])
+  @@index([cpf])
+  @@index([empresaId])
+  @@map("clientes")
+}
+
+// ─── Produto ────────────────────────────────────────────────────────────────
+
+model Produto {
+  id                   String   @id @default(cuid())
+  empresaId            String
+  nome                 String
+  referencia           String?
+  codigoInterno        String?
+  tamanho              String?
+  quantidadeTotal      Int      @default(1)
+  quantidadeDisponivel Int      @default(1)
+  valorLocacao         Decimal  @db.Decimal(10, 2)
+  valorCusto           Decimal? @db.Decimal(10, 2)
+  ativo                Boolean  @default(true)
+  removido             Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  empresa       Empresa        @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  itensContrato ItemContrato[]
+
+  @@index([empresaId])
+  @@index([codigoInterno])
+  @@map("produtos")
+}
+
+// ─── Contrato ───────────────────────────────────────────────────────────────
+
+model Contrato {
+  id             String         @id @default(cuid())
+  empresaId      String
+  clienteId      String
+  numeroContrato String
+  dataInicio     DateTime
+  dataFim        DateTime
+  valorTotal     Decimal        @db.Decimal(10, 2)
+  valorVenda     Decimal        @default(0) @db.Decimal(10, 2)
+  status         StatusContrato @default(PENDENTE)
+  qrCode         String?
+  observacoes    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  empresa       Empresa          @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  cliente       Cliente          @relation(fields: [clienteId], references: [id])
+  itens         ItemContrato[]
+  movimentacoes MovimentacaoAluguel[]
+  pagamentos    Pagamento[]
+  contasReceber ContaReceber[]
+
+  @@unique([numeroContrato, empresaId])
+  @@index([empresaId])
+  @@index([clienteId])
+  @@map("contratos")
+}
+
+// ─── ItemContrato ───────────────────────────────────────────────────────────
+
+model ItemContrato {
+  id           String  @id @default(cuid())
+  contratoId   String
+  produtoId    String
+  quantidade   Int     @default(1)
+  valorUnitario Decimal @db.Decimal(10, 2)
+  subtotal     Decimal @db.Decimal(10, 2)
+
+  contrato Contrato @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+  produto  Produto  @relation(fields: [produtoId], references: [id])
+
+  @@index([contratoId])
+  @@map("itens_contrato")
+}
+
+// ─── MovimentacaoAluguel ────────────────────────────────────────────────────
+
+model MovimentacaoAluguel {
+  id         String           @id @default(cuid())
+  contratoId String
+  tipo       TipoMovimentacao
+  data       DateTime         @default(now())
+  observacao String?
+
+  contrato Contrato @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+
+  @@index([contratoId])
+  @@map("movimentacoes_aluguel")
+}
+
+// ─── FormaPagamento ─────────────────────────────────────────────────────────
+
+model FormaPagamento {
+  id        String   @id @default(cuid())
+  empresaId String
+  nome      String
+  ativo     Boolean  @default(true)
+
+  empresa    Empresa     @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  pagamentos Pagamento[]
+
+  @@index([empresaId])
+  @@map("formas_pagamento")
+}
+
+// ─── Pagamento ──────────────────────────────────────────────────────────────
+
+model Pagamento {
+  id               String          @id @default(cuid())
+  empresaId        String
+  contratoId       String
+  formaPagamentoId String
+  valor            Decimal         @db.Decimal(10, 2)
+  parcelas         Int?
+  dataPagamento    DateTime        @default(now())
+  status           StatusPagamento @default(PENDENTE)
+  createdAt        DateTime        @default(now())
+
+  empresa        Empresa        @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  contrato       Contrato       @relation(fields: [contratoId], references: [id])
+  formaPagamento FormaPagamento @relation(fields: [formaPagamentoId], references: [id])
+
+  @@index([empresaId])
+  @@index([contratoId])
+  @@map("pagamentos")
+}
+
+// ─── ContaReceber ───────────────────────────────────────────────────────────
+
+model ContaReceber {
+  id            String             @id @default(cuid())
+  empresaId     String
+  contratoId    String
+  valorOriginal Decimal            @db.Decimal(10, 2)
+  valorPago     Decimal            @default(0) @db.Decimal(10, 2)
+  vencimento    DateTime
+  status        StatusContaReceber @default(ABERTA)
+
+  empresa  Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  contrato Contrato @relation(fields: [contratoId], references: [id])
+
+  @@index([empresaId])
+  @@index([contratoId])
+  @@map("contas_receber")
+}
+
+// ─── Ticket (Dívidas) ───────────────────────────────────────────────────────
+
+model Ticket {
+  id         String       @id @default(cuid())
+  empresaId  String
+  clienteId  String
+  contratoId String?
+  valor      Decimal      @db.Decimal(10, 2)
+  motivo     String
+  status     StatusTicket @default(ABERTO)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  empresa  Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  cliente  Cliente  @relation(fields: [clienteId], references: [id])
+
+  @@index([empresaId])
+  @@index([clienteId])
+  @@map("tickets")
+}
+
+// ─── ConfiguracaoEmpresa ────────────────────────────────────────────────────
+
+model ConfiguracaoEmpresa {
+  id                 String   @id @default(cuid())
+  empresaId          String   @unique
+  textoContrato      String?  @db.Text
+  observacoesPadrao  String?
+  multaPorAtraso     Decimal  @default(0) @db.Decimal(5, 2)
+  diasCarencia       Int      @default(0)
+  dadosBancarios     String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@map("configuracoes_empresa")
+}

@@ -1,0 +1,8 @@
+{
+  "extends": "@lookrent/config/typescript/base",
+  "compilerOptions": {
+    "outDir": "dist",
+    "types": ["node"]
+  },
+  "include": ["src", "prisma"]
+}

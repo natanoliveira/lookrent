@@ -1,0 +1,22 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+.next
+dist
+.turbo
+
+# Environment
+.env
+.env.local
+.env.*.local
+apps/.env
+apps/.local
+apps/*.local
+
+# Misc
+.DS_Store
+*.log
+apps/web/public/uploads
+CLAUDE.md

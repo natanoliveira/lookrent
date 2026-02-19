@@ -1,0 +1,8 @@
+{
+  "extends": "@lookrent/config/typescript/nextjs",
+  "compilerOptions": {
+    "jsx": "preserve"
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}
